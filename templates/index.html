@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Asistan — Email & Podcast</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { background: #0f172a; color: #e2e8f0; font-family: system-ui, sans-serif; }
+    .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; }
+    .btn-primary { background: #6366f1; color: white; padding: 10px 20px; border-radius: 8px; font-weight: 600; cursor: pointer; transition: background .2s; border: none; }
+    .btn-primary:hover { background: #4f46e5; }
+    .btn-primary:disabled { background: #475569; cursor: not-allowed; }
+    .btn-sm { padding: 5px 12px; font-size: 12px; border-radius: 6px; font-weight: 600; cursor: pointer; border: none; transition: all .2s; }
+    .btn-trash { background: #450a0a; color: #fca5a5; }
+    .btn-trash:hover { background: #7f1d1d; }
+    .btn-listened { background: #064e3b; color: #6ee7b7; }
+    .btn-listened:hover { background: #065f46; }
+    .btn-listened.done { background: #1f2937; color: #4b5563; cursor: default; }
+    .tab { padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 500; color: #94a3b8; transition: all .2s; }
+    .tab.active { background: #312e81; color: #a5b4fc; }
+    .tab:hover:not(.active) { color: #e2e8f0; }
+    .inner-tab { padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500; color: #94a3b8; border: 1px solid #334155; transition: all .2s; }
+    .inner-tab.active { background: #1e3a5f; color: #93c5fd; border-color: #1e3a5f; }
+    .item-row { border-bottom: 1px solid #0f172a; padding: 12px 16px; transition: background .15s; display: flex; align-items: flex-start; gap: 12px; }
+    .item-row:hover { background: #263348; }
+    .item-row:last-child { border-bottom: none; }
+    .item-row.listened-row { opacity: 0.45; }
+    .badge { font-size: 11px; padding: 2px 8px; border-radius: 20px; font-weight: 600; }
+    .badge-green { background: #064e3b; color: #6ee7b7; }
+    .badge-red { background: #450a0a; color: #fca5a5; }
+    .badge-blue { background: #1e3a5f; color: #93c5fd; }
+    .spinner { border: 3px solid #334155; border-top-color: #6366f1; border-radius: 50%; width: 24px; height: 24px; animation: spin 0.7s linear infinite; display: inline-block; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .chat-bubble-user { background: #312e81; border-radius: 12px 12px 4px 12px; padding: 10px 14px; margin-left: auto; max-width: 80%; }
+    .chat-bubble-ai { background: #1e293b; border: 1px solid #334155; border-radius: 12px 12px 12px 4px; padding: 10px 14px; max-width: 85%; }
+    .summary-box { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 16px; white-space: pre-wrap; line-height: 1.7; font-size: 15px; }
+    .select-bar { background: #0f172a; border-radius: 8px 8px 0 0; padding: 10px 16px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #334155; }
+    audio { width: 100%; border-radius: 8px; accent-color: #6366f1; }
+    ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-track { background: #1e293b; } ::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+    .mini-list { max-height: 280px; overflow-y: auto; }
+  </style>
+</head>
+<body class="min-h-screen">
+
+<!-- HEADER -->
+<header class="border-b border-slate-700 px-6 py-4 flex items-center justify-between">
+  <div class="flex items-center gap-3">
+    <span class="text-2xl">🎙️</span>
+    <span class="text-xl font-bold text-slate-100">Asistan</span>
+    <span class="text-slate-500 text-sm">Email & Podcast Özet</span>
+  </div>
+  <div class="flex items-center gap-3">
+    <span class="badge {{ 'badge-green' if gmail_ready else 'badge-red' }}">
+      📧 Gmail {{ 'Bağlı' if gmail_ready else 'Kurulmadı' }}
+    </span>
+    {% if spotify_connected %}
+      <span class="badge badge-green">🎵 Spotify Bağlı</span>
+      <a href="/api/spotify/disconnect" class="text-xs text-slate-500 hover:text-red-400">çıkış</a>
+    {% else %}
+      <span class="badge badge-red">🎵 Spotify Yok</span>
+    {% endif %}
+  </div>
+</header>
+
+<!-- MAIN -->
+<main class="max-w-4xl mx-auto px-4 py-6 space-y-6">
+
+  <!-- TABS -->
+  <div class="flex gap-2">
+    <button class="tab active" onclick="showTab('emails', this)">📧 Emailler</button>
+    <button class="tab" onclick="showTab('podcasts', this)">🎵 Podcastler</button>
+    <button class="tab" onclick="showTab('chat', this)">💬 Sohbet</button>
+  </div>
+
+  <!-- ───────────────── EMAIL TAB ───────────────── -->
+  <section id="tab-emails" class="space-y-4">
+    <div class="flex items-center justify-between">
+      <div>
+        <h2 class="text-lg font-semibold">Gelen Kutusu</h2>
+        <p class="text-slate-400 text-sm">Emaillerini getir, seç, sesli özet al veya çöpe at.</p>
+      </div>
+      <button class="btn-primary" onclick="fetchEmails()">📬 Getir</button>
+    </div>
+
+    <div id="emails-loading" class="hidden text-center py-8">
+      <div class="spinner mx-auto mb-3"></div>
+      <p class="text-slate-400 text-sm">Emailler alınıyor...</p>
+    </div>
+
+    <div id="emails-list" class="card hidden">
+      <div class="select-bar">
+        <label class="flex items-center gap-2 text-sm text-slate-400 cursor-pointer">
+          <input type="checkbox" id="emails-select-all" onchange="toggleSelectAll('email')" class="w-4 h-4 accent-indigo-500">
+          Tümünü Seç
+        </label>
+        <span id="emails-count" class="text-slate-500 text-sm"></span>
+      </div>
+      <div id="emails-items"></div>
+    </div>
+
+    <div id="emails-actions" class="hidden flex items-center justify-between">
+      <span id="emails-selected-info" class="text-slate-400 text-sm"></span>
+      <button class="btn-primary" onclick="summarizeEmails()">🔊 Seçilenleri Özetle</button>
+    </div>
+
+    <div id="emails-result" class="hidden space-y-4">
+      <h3 class="font-semibold text-indigo-300">Sesli Özet <span class="text-xs text-slate-500 font-normal ml-2">📱 Telegram'a gönderildi</span></h3>
+      <audio id="emails-audio" controls></audio>
+      <div id="emails-summary" class="summary-box text-slate-300"></div>
+    </div>
+  </section>
+
+  <!-- ───────────────── PODCAST TAB ───────────────── -->
+  <section id="tab-podcasts" class="space-y-4 hidden">
+    {% if not spotify_connected %}
+    <div class="card p-8 text-center space-y-4">
+      <div class="text-5xl">🎵</div>
+      <h2 class="text-lg font-semibold">Spotify Hesabına Bağlan</h2>
+      <p class="text-slate-400 text-sm">Takip ettiğin podcastlerin yeni bölümlerini görüntülemek için bağlan.</p>
+      <a href="/api/spotify/auth" class="btn-primary inline-block">Spotify ile Giriş Yap</a>
+    </div>
+    {% else %}
+    <div class="flex items-center justify-between">
+      <div>
+        <h2 class="text-lg font-semibold">Son 30 Günün Bölümleri</h2>
+        <p class="text-slate-400 text-sm">Seç, sesli özet al veya dinlendi işaretle.</p>
+      </div>
+      <button class="btn-primary" onclick="fetchPodcasts()">🎙️ Getir</button>
+    </div>
+
+    <div id="podcasts-loading" class="hidden text-center py-8">
+      <div class="spinner mx-auto mb-3"></div>
+      <p class="text-slate-400 text-sm">Spotify'dan bölümler alınıyor...</p>
+    </div>
+
+    <div id="podcasts-list" class="card hidden">
+      <div class="select-bar">
+        <label class="flex items-center gap-2 text-sm text-slate-400 cursor-pointer">
+          <input type="checkbox" id="podcasts-select-all" onchange="toggleSelectAll('podcast')" class="w-4 h-4 accent-indigo-500">
+          Tümünü Seç
+        </label>
+        <span id="podcasts-count" class="text-slate-500 text-sm"></span>
+      </div>
+      <div id="podcasts-items"></div>
+    </div>
+
+    <div id="podcasts-actions" class="hidden flex items-center justify-between">
+      <span id="podcasts-selected-info" class="text-slate-400 text-sm"></span>
+      <button class="btn-primary" onclick="summarizePodcasts()">🔊 Seçilenleri Özetle</button>
+    </div>
+
+    <div id="podcasts-result" class="hidden space-y-4">
+      <h3 class="font-semibold text-indigo-300">Sesli Özet <span class="text-xs text-slate-500 font-normal ml-2">📱 Telegram'a gönderildi</span></h3>
+      <audio id="podcasts-audio" controls></audio>
+      <div id="podcasts-summary" class="summary-box text-slate-300"></div>
+    </div>
+    {% endif %}
+  </section>
+
+  <!-- ───────────────── CHAT TAB ───────────────── -->
+  <section id="tab-chat" class="space-y-4 hidden">
+    <div>
+      <h2 class="text-lg font-semibold">Sohbet</h2>
+      <p class="text-slate-400 text-sm">Hangi email veya podcast hakkında konuşmak istediğini seç, sonra sor.</p>
+    </div>
+
+    <!-- Context Selector -->
+    <div class="card p-4 space-y-3">
+      <div class="flex items-center justify-between">
+        <span class="text-sm font-semibold text-slate-300">Sohbet Konusu</span>
+        <div class="flex gap-2">
+          <button class="inner-tab active" id="ctx-tab-emails" onclick="switchCtxTab('emails')">📧 Emailler</button>
+          <button class="inner-tab" id="ctx-tab-podcasts" onclick="switchCtxTab('podcasts')">🎵 Podcastler</button>
+        </div>
+      </div>
+
+      <!-- Email context list -->
+      <div id="ctx-emails" class="space-y-1">
+        <div id="ctx-emails-empty" class="text-slate-500 text-sm py-2">
+          Önce Email sekmesinden emaillerini getir.
+        </div>
+        <div id="ctx-emails-list" class="card mini-list hidden"></div>
+      </div>
+
+      <!-- Podcast context list -->
+      <div id="ctx-podcasts" class="space-y-1 hidden">
+        <div id="ctx-podcasts-empty" class="text-slate-500 text-sm py-2">
+          Önce Podcast sekmesinden bölümleri getir.
+        </div>
+        <div id="ctx-podcasts-list" class="card mini-list hidden"></div>
+      </div>
+
+      <div class="flex items-center justify-between pt-1">
+        <span id="ctx-selected-info" class="text-slate-500 text-xs"></span>
+        <button class="btn-primary text-sm py-2 px-4" onclick="setChatContext()" id="ctx-set-btn" disabled
+          style="opacity:0.4">
+          Bu konuda konuş
+        </button>
+      </div>
+    </div>
+
+    <!-- Chat area -->
+    <div id="chat-area" class="hidden space-y-4">
+      <div id="chat-context-info" class="badge badge-blue inline-block text-xs"></div>
+      <div id="chat-messages" class="card p-4 space-y-4 overflow-y-auto" style="min-height:180px; max-height:400px;"></div>
+
+      <div id="chat-audio-player" class="hidden">
+        <audio id="chat-audio" controls></audio>
+      </div>
+
+      <div class="card p-3 flex gap-3 items-end">
+        <textarea id="chat-input" rows="2"
+          class="flex-1 bg-transparent resize-none text-slate-200 placeholder-slate-500 outline-none text-sm"
+          placeholder="Soru sor... (Enter = gönder, Shift+Enter = yeni satır)"
+          onkeydown="chatKeydown(event)"></textarea>
+        <div class="flex flex-col gap-2 flex-shrink-0">
+          <label class="flex items-center gap-1.5 text-xs text-slate-400 cursor-pointer whitespace-nowrap">
+            <input type="checkbox" id="voice-toggle" class="accent-indigo-500"> Sesli yanıt
+          </label>
+          <button class="btn-primary text-sm py-2 px-4" onclick="sendChat()">Gönder</button>
+        </div>
+      </div>
+
+      <div id="chat-loading" class="hidden text-center py-3">
+        <div class="spinner mx-auto mb-2"></div>
+        <p class="text-slate-400 text-xs">Yanıt oluşturuluyor...</p>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- TOAST -->
+<div id="toast" class="fixed bottom-6 right-6 hidden z-50">
+  <div id="toast-msg" class="card px-5 py-3 text-sm font-medium shadow-xl"></div>
+</div>
+
+<script>
+// ─── State ──────────────────────────────────────────────────────────────────
+const selectedEmails = new Set();
+const selectedPodcasts = new Set();
+const selectedCtxEmails = new Set();
+const selectedCtxPodcasts = new Set();
+let emailsData = [];
+let episodesData = [];
+let activeCtxTab = 'emails';
+const lastAudio = { emails: null, podcasts: null };
+
+// ─── Tabs ────────────────────────────────────────────────────────────────────
+function showTab(name, btn) {
+  ['emails','podcasts','chat'].forEach(t => document.getElementById('tab-' + t).classList.add('hidden'));
+  document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.remove('hidden');
+  btn.classList.add('active');
+  if (name === 'chat') refreshCtxLists();
+}
+
+// ─── Toast ───────────────────────────────────────────────────────────────────
+function toast(msg, isError=false) {
+  const el = document.getElementById('toast');
+  const msgEl = document.getElementById('toast-msg');
+  msgEl.textContent = msg;
+  msgEl.className = 'card px-5 py-3 text-sm font-medium shadow-xl ' + (isError ? 'text-red-400' : 'text-green-400');
+  el.classList.remove('hidden');
+  setTimeout(() => el.classList.add('hidden'), 3500);
+}
+
+// ─── Emails ──────────────────────────────────────────────────────────────────
+async function fetchEmails() {
+  show('emails-loading'); hide('emails-list'); hide('emails-actions'); hide('emails-result');
+  selectedEmails.clear();
+  try {
+    const r = await fetch('/api/emails/fetch');
+    const data = await r.json();
+    if (!data.ok) { toast(data.error, true); hide('emails-loading'); return; }
+    emailsData = data.emails;
+    renderEmails(emailsData);
+  } catch(e) { toast('Bağlantı hatası', true); }
+  hide('emails-loading');
+}
+
+function renderEmails(emails) {
+  const container = document.getElementById('emails-items');
+  document.getElementById('emails-count').textContent = emails.length + ' email';
+  container.innerHTML = '';
+  emails.forEach(e => {
+    const row = document.createElement('div');
+    row.id = 'email-row-' + e.id;
+    row.className = 'item-row';
+    row.innerHTML = `
+      <input type="checkbox" data-id="${e.id}" class="email-cb w-4 h-4 mt-1 flex-shrink-0 accent-indigo-500" onchange="toggleEmail('${e.id}', this)">
+      <div class="flex-1 min-w-0 cursor-pointer" onclick="triggerCb(this)">
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-slate-200 font-medium text-sm truncate">${esc(e.subject)}</span>
+          <span class="text-slate-500 text-xs flex-shrink-0">${esc(e.date.slice(0,16))}</span>
+        </div>
+        <div class="text-slate-400 text-xs mt-0.5 truncate">${esc(e.from)}</div>
+        <div class="text-slate-500 text-xs mt-1 truncate">${esc(e.snippet)}</div>
+      </div>
+      <button class="btn-sm btn-trash flex-shrink-0 mt-0.5" onclick="trashEmail('${e.id}', event)" title="Çöpe at">🗑️</button>`;
+    container.appendChild(row);
+  });
+  show('emails-list');
+  updateEmailActions();
+}
+
+async function trashEmail(id, event) {
+  event.stopPropagation();
+  const row = document.getElementById('email-row-' + id);
+  if (row) { row.style.opacity = '0.3'; row.style.pointerEvents = 'none'; }
+  try {
+    const r = await fetch(`/api/emails/${id}/trash`, { method: 'POST' });
+    const data = await r.json();
+    if (data.ok) {
+      if (row) row.remove();
+      selectedEmails.delete(id);
+      emailsData = emailsData.filter(e => e.id !== id);
+      updateEmailActions();
+      toast('Email çöpe atıldı.');
+    } else {
+      if (row) { row.style.opacity = '1'; row.style.pointerEvents = ''; }
+      toast(data.error, true);
+    }
+  } catch(e) {
+    if (row) { row.style.opacity = '1'; row.style.pointerEvents = ''; }
+    toast('Hata', true);
+  }
+}
+
+function triggerCb(el) {
+  const cb = el.closest('.item-row').querySelector('input[type=checkbox]');
+  cb.checked = !cb.checked;
+  cb.dispatchEvent(new Event('change'));
+}
+
+function toggleEmail(id, cb) {
+  cb.checked ? selectedEmails.add(id) : selectedEmails.delete(id);
+  updateEmailActions();
+}
+
+function updateEmailActions() {
+  const n = selectedEmails.size;
+  if (n > 0) {
+    document.getElementById('emails-selected-info').textContent = n + ' email seçildi';
+    show('emails-actions');
+  } else { hide('emails-actions'); }
+}
+
+function toggleSelectAll(type) {
+  const isEmail = type === 'email';
+  const allCbs = document.querySelectorAll('.' + (isEmail ? 'email' : 'podcast') + '-cb');
+  const masterCb = document.getElementById((isEmail ? 'emails' : 'podcasts') + '-select-all');
+  const set = isEmail ? selectedEmails : selectedPodcasts;
+  set.clear();
+  allCbs.forEach(cb => { cb.checked = masterCb.checked; if (masterCb.checked) set.add(cb.dataset.id); });
+  isEmail ? updateEmailActions() : updatePodcastActions();
+}
+
+async function summarizeEmails() {
+  if (!selectedEmails.size) { toast('Önce email seçin', true); return; }
+  const btn = document.querySelector('#emails-actions button');
+  btn.disabled = true; btn.textContent = '⏳ Özetleniyor...';
+  hide('emails-result');
+  try {
+    const r = await fetch('/api/emails/summarize', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ids: [...selectedEmails]})
+    });
+    const data = await r.json();
+    if (!data.ok) { toast(data.error, true); }
+    else {
+      document.getElementById('emails-audio').src = data.audio + '?t=' + Date.now();
+      document.getElementById('emails-summary').textContent = data.summary;
+      lastAudio.emails = data.audio.split('/').pop();
+      show('emails-result');
+      document.getElementById('emails-audio').play();
+      toast('Özet hazır! 🎙️');
+    }
+  } catch(e) { toast('Hata: ' + e, true); }
+  btn.disabled = false; btn.textContent = '🔊 Seçilenleri Özetle';
+}
+
+// ─── Podcasts ─────────────────────────────────────────────────────────────────
+async function fetchPodcasts() {
+  show('podcasts-loading'); hide('podcasts-list'); hide('podcasts-actions'); hide('podcasts-result');
+  selectedPodcasts.clear();
+  try {
+    const r = await fetch('/api/podcasts/fetch');
+    const data = await r.json();
+    if (!data.ok) { toast(data.error, true); hide('podcasts-loading'); return; }
+    episodesData = data.episodes;
+    renderPodcasts(episodesData);
+  } catch(e) { toast('Bağlantı hatası', true); }
+  hide('podcasts-loading');
+}
+
+function renderPodcasts(episodes) {
+  const container = document.getElementById('podcasts-items');
+  document.getElementById('podcasts-count').textContent = episodes.length + ' bölüm';
+  container.innerHTML = '';
+  if (!episodes.length) {
+    container.innerHTML = '<p class="p-6 text-center text-slate-500">Son 30 günde yeni bölüm bulunamadı.</p>';
+    show('podcasts-list'); return;
+  }
+  episodes.forEach(ep => {
+    const row = document.createElement('div');
+    row.id = 'ep-row-' + ep.id;
+    row.className = 'item-row' + (ep.listened ? ' listened-row' : '');
+    const dur = ep.duration_min > 0 ? ep.duration_min + ' dk' : '';
+    const listenedBtn = ep.listened
+      ? `<button class="btn-sm btn-listened done flex-shrink-0" disabled>✓ Dinlendi</button>`
+      : `<button class="btn-sm btn-listened flex-shrink-0" onclick="markListened('${ep.id}', event)">✓ Dinlendi</button>`;
+    row.innerHTML = `
+      <input type="checkbox" data-id="${ep.id}" class="podcast-cb w-4 h-4 mt-1 flex-shrink-0 accent-indigo-500" onchange="togglePodcast('${ep.id}', this)" ${ep.listened ? 'disabled' : ''}>
+      <div class="flex-1 min-w-0 cursor-pointer" onclick="${ep.listened ? '' : 'triggerCb(this)'}">
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-slate-200 font-medium text-sm truncate">${esc(ep.title)}</span>
+          <span class="text-slate-500 text-xs flex-shrink-0">${dur}</span>
+        </div>
+        <div class="text-indigo-400 text-xs mt-0.5">${esc(ep.show_name)}</div>
+        <div class="text-slate-500 text-xs mt-0.5">${esc(ep.release_date)}</div>
+      </div>
+      ${listenedBtn}`;
+    container.appendChild(row);
+  });
+  show('podcasts-list');
+  updatePodcastActions();
+}
+
+async function markListened(id, event) {
+  event.stopPropagation();
+  const btn = event.target;
+  btn.disabled = true; btn.textContent = '...';
+  try {
+    const r = await fetch(`/api/podcasts/${id}/listened`, { method: 'POST' });
+    const data = await r.json();
+    if (data.ok) {
+      const row = document.getElementById('ep-row-' + id);
+      if (row) row.remove();
+      selectedPodcasts.delete(id);
+      episodesData = episodesData.filter(e => e.id !== id);
+      updatePodcastActions();
+      toast('Dinlendi — listeden kaldırıldı.');
+    } else { btn.disabled = false; btn.textContent = '✓ Dinlendi'; toast(data.error, true); }
+  } catch(e) { btn.disabled = false; btn.textContent = '✓ Dinlendi'; toast('Hata', true); }
+}
+
+function togglePodcast(id, cb) {
+  cb.checked ? selectedPodcasts.add(id) : selectedPodcasts.delete(id);
+  updatePodcastActions();
+}
+
+function updatePodcastActions() {
+  const n = selectedPodcasts.size;
+  if (n > 0) {
+    document.getElementById('podcasts-selected-info').textContent = n + ' bölüm seçildi';
+    show('podcasts-actions');
+  } else { hide('podcasts-actions'); }
+}
+
+async function summarizePodcasts() {
+  if (!selectedPodcasts.size) { toast('Önce bölüm seçin', true); return; }
+  const btn = document.querySelector('#podcasts-actions button');
+  btn.disabled = true; btn.textContent = '⏳ Özetleniyor...';
+  hide('podcasts-result');
+  try {
+    const r = await fetch('/api/podcasts/summarize', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ids: [...selectedPodcasts]})
+    });
+    const data = await r.json();
+    if (!data.ok) { toast(data.error, true); }
+    else {
+      document.getElementById('podcasts-audio').src = data.audio + '?t=' + Date.now();
+      document.getElementById('podcasts-summary').textContent = data.summary;
+      lastAudio.podcasts = data.audio.split('/').pop();
+      show('podcasts-result');
+      document.getElementById('podcasts-audio').play();
+      toast('Özet hazır! 🎙️');
+    }
+  } catch(e) { toast('Hata: ' + e, true); }
+  btn.disabled = false; btn.textContent = '🔊 Seçilenleri Özetle';
+}
+
+// ─── Chat Context Selector ────────────────────────────────────────────────────
+function switchCtxTab(tab) {
+  activeCtxTab = tab;
+  document.getElementById('ctx-tab-emails').classList.toggle('active', tab === 'emails');
+  document.getElementById('ctx-tab-podcasts').classList.toggle('active', tab === 'podcasts');
+  document.getElementById('ctx-emails').classList.toggle('hidden', tab !== 'emails');
+  document.getElementById('ctx-podcasts').classList.toggle('hidden', tab === 'emails');
+  updateCtxBtn();
+}
+
+function refreshCtxLists() {
+  // Emails
+  const emailList = document.getElementById('ctx-emails-list');
+  const emailEmpty = document.getElementById('ctx-emails-empty');
+  if (emailsData.length) {
+    emailEmpty.classList.add('hidden');
+    emailList.classList.remove('hidden');
+    emailList.innerHTML = '';
+    emailsData.forEach(e => {
+      const row = document.createElement('div');
+      row.className = 'item-row';
+      row.innerHTML = `
+        <input type="checkbox" data-id="${e.id}" class="ctx-email-cb w-4 h-4 mt-0.5 flex-shrink-0 accent-indigo-500" onchange="toggleCtx('email','${e.id}',this)">
+        <div class="flex-1 min-w-0 cursor-pointer" onclick="triggerCtxCb(this)">
+          <div class="text-slate-200 text-xs font-medium truncate">${esc(e.subject)}</div>
+          <div class="text-slate-500 text-xs truncate">${esc(e.from)}</div>
+        </div>`;
+      emailList.appendChild(row);
+    });
+  } else {
+    emailEmpty.classList.remove('hidden'); emailList.classList.add('hidden');
+  }
+
+  // Podcasts
+  const epList = document.getElementById('ctx-podcasts-list');
+  const epEmpty = document.getElementById('ctx-podcasts-empty');
+  if (episodesData.length) {
+    epEmpty.classList.add('hidden');
+    epList.classList.remove('hidden');
+    epList.innerHTML = '';
+    episodesData.forEach(ep => {
+      const row = document.createElement('div');
+      row.className = 'item-row';
+      row.innerHTML = `
+        <input type="checkbox" data-id="${ep.id}" class="ctx-podcast-cb w-4 h-4 mt-0.5 flex-shrink-0 accent-indigo-500" onchange="toggleCtx('podcast','${ep.id}',this)">
+        <div class="flex-1 min-w-0 cursor-pointer" onclick="triggerCtxCb(this)">
+          <div class="text-slate-200 text-xs font-medium truncate">${esc(ep.title)}</div>
+          <div class="text-indigo-400 text-xs truncate">${esc(ep.show_name)}</div>
+        </div>`;
+      epList.appendChild(row);
+    });
+  } else {
+    epEmpty.classList.remove('hidden'); epList.classList.add('hidden');
+  }
+
+  selectedCtxEmails.clear(); selectedCtxPodcasts.clear();
+  updateCtxBtn();
+}
+
+function triggerCtxCb(el) {
+  const cb = el.closest('.item-row').querySelector('input[type=checkbox]');
+  cb.checked = !cb.checked; cb.dispatchEvent(new Event('change'));
+}
+
+function toggleCtx(type, id, cb) {
+  const set = type === 'email' ? selectedCtxEmails : selectedCtxPodcasts;
+  cb.checked ? set.add(id) : set.delete(id);
+  updateCtxBtn();
+}
+
+function updateCtxBtn() {
+  const set = activeCtxTab === 'emails' ? selectedCtxEmails : selectedCtxPodcasts;
+  const n = set.size;
+  const btn = document.getElementById('ctx-set-btn');
+  const info = document.getElementById('ctx-selected-info');
+  if (n > 0) {
+    btn.disabled = false; btn.style.opacity = '1';
+    info.textContent = n + (activeCtxTab === 'emails' ? ' email' : ' bölüm') + ' seçildi';
+  } else {
+    btn.disabled = true; btn.style.opacity = '0.4';
+    info.textContent = '';
+  }
+}
+
+async function setChatContext() {
+  const type = activeCtxTab === 'emails' ? 'emails' : 'podcasts';
+  const ids = type === 'emails' ? [...selectedCtxEmails] : [...selectedCtxPodcasts];
+  const btn = document.getElementById('ctx-set-btn');
+  btn.disabled = true; btn.textContent = '⏳';
+  try {
+    const r = await fetch('/api/chat/context', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({type, ids})
+    });
+    const data = await r.json();
+    if (!data.ok) { toast(data.error, true); }
+    else {
+      const label = type === 'emails' ? `📧 ${data.count} email üzerinde sohbet` : `🎵 ${data.count} bölüm üzerinde sohbet`;
+      document.getElementById('chat-context-info').textContent = label;
+      document.getElementById('chat-messages').innerHTML = '';
+      hide('chat-audio-player');
+      show('chat-area');
+      toast('Konu ayarlandı, sorularını sor!');
+    }
+  } catch(e) { toast('Hata: ' + e, true); }
+  btn.disabled = false; btn.textContent = 'Bu konuda konuş';
+  updateCtxBtn();
+}
+
+// ─── Chat ─────────────────────────────────────────────────────────────────────
+function chatKeydown(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); }
+}
+
+async function sendChat() {
+  const input = document.getElementById('chat-input');
+  const question = input.value.trim();
+  if (!question) return;
+  const wantVoice = document.getElementById('voice-toggle').checked;
+  appendMsg('user', question);
+  input.value = '';
+  show('chat-loading'); hide('chat-audio-player');
+  try {
+    const r = await fetch('/api/chat', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({question, voice: wantVoice})
+    });
+    const data = await r.json();
+    hide('chat-loading');
+    if (!data.ok) { toast(data.error, true); return; }
+    appendMsg('assistant', data.answer);
+    if (data.audio) {
+      document.getElementById('chat-audio').src = data.audio + '?t=' + Date.now();
+      show('chat-audio-player');
+      document.getElementById('chat-audio').play();
+    }
+  } catch(e) { hide('chat-loading'); toast('Hata: ' + e, true); }
+}
+
+function appendMsg(role, text) {
+  const msgs = document.getElementById('chat-messages');
+  const div = document.createElement('div');
+  div.className = role === 'user' ? 'chat-bubble-user text-slate-200 text-sm' : 'chat-bubble-ai text-slate-300 text-sm';
+  div.textContent = text;
+  msgs.appendChild(div);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+// ─── Telegram ────────────────────────────────────────────────────────────────
+async function sendTelegram(type) {
+  const filename = lastAudio[type];
+  if (!filename) { toast('Önce özet oluşturun', true); return; }
+  const btn = document.getElementById('tg-' + type + '-btn');
+  btn.disabled = true; btn.textContent = '⏳ Gönderiliyor...';
+  try {
+    const caption = type === 'emails' ? '📧 Email Özeti' : '🎵 Podcast Özeti';
+    const r = await fetch('/api/send-telegram', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({filename, caption})
+    });
+    const data = await r.json();
+    if (data.ok) { toast('📱 Telegram\'a gönderildi!'); btn.textContent = '✓ Gönderildi'; }
+    else { toast(data.error, true); btn.disabled = false; btn.textContent = '📱 Telegram\'a Gönder'; }
+  } catch(e) {
+    toast('Hata: ' + e, true);
+    btn.disabled = false; btn.textContent = '📱 Telegram\'a Gönder';
+  }
+}
+
+// ─── Utils ───────────────────────────────────────────────────────────────────
+function show(id) { document.getElementById(id)?.classList.remove('hidden'); }
+function hide(id) { document.getElementById(id)?.classList.add('hidden'); }
+function esc(str) {
+  return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+</body>
+</html>
