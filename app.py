@@ -32,6 +32,11 @@ def get_store():
     return store.setdefault(sid, {})
 
 
+@app.context_processor
+def inject_url_prefix():
+    return {"url_prefix": os.environ.get("URL_PREFIX", "")}
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Pages
 # ──────────────────────────────────────────────────────────────────────────────

@@ -63,7 +63,7 @@
     </span>
     {% if spotify_connected %}
       <span class="badge badge-green">🎵 Spotify Bağlı</span>
-      <a href="/api/spotify/disconnect" class="text-xs text-slate-500 hover:text-red-400">çıkış</a>
+      <a href="{{ url_prefix }}/api/spotify/disconnect" class="text-xs text-slate-500 hover:text-red-400">çıkış</a>
     {% else %}
       <span class="badge badge-red">🎵 Spotify Yok</span>
     {% endif %}
@@ -125,7 +125,7 @@
       <div class="text-5xl">🎵</div>
       <h2 class="text-lg font-semibold">Spotify Hesabına Bağlan</h2>
       <p class="text-slate-400 text-sm">Takip ettiğin podcastlerin yeni bölümlerini görüntülemek için bağlan.</p>
-      <a href="/api/spotify/auth" class="btn-primary inline-block">Spotify ile Giriş Yap</a>
+      <a href="{{ url_prefix }}/api/spotify/auth" class="btn-primary inline-block">Spotify ile Giriş Yap</a>
     </div>
     {% else %}
     <div class="flex items-center justify-between">
@@ -244,6 +244,9 @@
 </div>
 
 <script>
+// ─── Base URL (PA'da /asistan, local'de boş) ─────────────────────────────────
+const BASE = "{{ url_prefix }}";
+
 // ─── State ──────────────────────────────────────────────────────────────────
 const selectedEmails = new Set();
 const selectedPodcasts = new Set();
@@ -278,7 +281,7 @@ async function fetchEmails() {
   show('emails-loading'); hide('emails-list'); hide('emails-actions'); hide('emails-result');
   selectedEmails.clear();
   try {
-    const r = await fetch('/api/emails/fetch');
+    const r = await fetch(BASE + '/api/emails/fetch');
     const data = await r.json();
     if (!data.ok) { toast(data.error, true); hide('emails-loading'); return; }
     emailsData = data.emails;
@@ -317,7 +320,7 @@ async function trashEmail(id, event) {
   const row = document.getElementById('email-row-' + id);
   if (row) { row.style.opacity = '0.3'; row.style.pointerEvents = 'none'; }
   try {
-    const r = await fetch(`/api/emails/${id}/trash`, { method: 'POST' });
+    const r = await fetch(BASE + `/api/emails/${id}/trash`, { method: 'POST' });
     const data = await r.json();
     if (data.ok) {
       if (row) row.remove();
@@ -370,14 +373,14 @@ async function summarizeEmails() {
   btn.disabled = true; btn.textContent = '⏳ Özetleniyor...';
   hide('emails-result');
   try {
-    const r = await fetch('/api/emails/summarize', {
+    const r = await fetch(BASE + '/api/emails/summarize', {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ids: [...selectedEmails]})
     });
     const data = await r.json();
     if (!data.ok) { toast(data.error, true); }
     else {
-      document.getElementById('emails-audio').src = data.audio + '?t=' + Date.now();
+      document.getElementById('emails-audio').src = BASE + data.audio + '?t=' + Date.now();
       document.getElementById('emails-summary').textContent = data.summary;
       lastAudio.emails = data.audio.split('/').pop();
       show('emails-result');
@@ -393,7 +396,7 @@ async function fetchPodcasts() {
   show('podcasts-loading'); hide('podcasts-list'); hide('podcasts-actions'); hide('podcasts-result');
   selectedPodcasts.clear();
   try {
-    const r = await fetch('/api/podcasts/fetch');
+    const r = await fetch(BASE + '/api/podcasts/fetch');
     const data = await r.json();
     if (!data.ok) { toast(data.error, true); hide('podcasts-loading'); return; }
     episodesData = data.episodes;
@@ -441,7 +444,7 @@ async function markListened(id, event) {
   const btn = event.target;
   btn.disabled = true; btn.textContent = '...';
   try {
-    const r = await fetch(`/api/podcasts/${id}/listened`, { method: 'POST' });
+    const r = await fetch(BASE + `/api/podcasts/${id}/listened`, { method: 'POST' });
     const data = await r.json();
     if (data.ok) {
       const row = document.getElementById('ep-row-' + id);
@@ -473,14 +476,14 @@ async function summarizePodcasts() {
   btn.disabled = true; btn.textContent = '⏳ Özetleniyor...';
   hide('podcasts-result');
   try {
-    const r = await fetch('/api/podcasts/summarize', {
+    const r = await fetch(BASE + '/api/podcasts/summarize', {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ids: [...selectedPodcasts]})
     });
     const data = await r.json();
     if (!data.ok) { toast(data.error, true); }
     else {
-      document.getElementById('podcasts-audio').src = data.audio + '?t=' + Date.now();
+      document.getElementById('podcasts-audio').src = BASE + data.audio + '?t=' + Date.now();
       document.getElementById('podcasts-summary').textContent = data.summary;
       lastAudio.podcasts = data.audio.split('/').pop();
       show('podcasts-result');
@@ -581,7 +584,7 @@ async function setChatContext() {
   const btn = document.getElementById('ctx-set-btn');
   btn.disabled = true; btn.textContent = '⏳';
   try {
-    const r = await fetch('/api/chat/context', {
+    const r = await fetch(BASE + '/api/chat/context', {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({type, ids})
     });
@@ -614,7 +617,7 @@ async function sendChat() {
   input.value = '';
   show('chat-loading'); hide('chat-audio-player');
   try {
-    const r = await fetch('/api/chat', {
+    const r = await fetch(BASE + '/api/chat', {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({question, voice: wantVoice})
     });
@@ -623,7 +626,7 @@ async function sendChat() {
     if (!data.ok) { toast(data.error, true); return; }
     appendMsg('assistant', data.answer);
     if (data.audio) {
-      document.getElementById('chat-audio').src = data.audio + '?t=' + Date.now();
+      document.getElementById('chat-audio').src = BASE + data.audio + '?t=' + Date.now();
       show('chat-audio-player');
       document.getElementById('chat-audio').play();
     }
@@ -647,7 +650,7 @@ async function sendTelegram(type) {
   btn.disabled = true; btn.textContent = '⏳ Gönderiliyor...';
   try {
     const caption = type === 'emails' ? '📧 Email Özeti' : '🎵 Podcast Özeti';
-    const r = await fetch('/api/send-telegram', {
+    const r = await fetch(BASE + '/api/send-telegram', {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({filename, caption})
     });
@@ -679,7 +682,7 @@ async function getTranscript(id, event) {
   document.getElementById('transcript-panel').classList.add('open');
 
   try {
-    const r = await fetch('/api/podcasts/transcript', {
+    const r = await fetch(BASE + '/api/podcasts/transcript', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ id }),
