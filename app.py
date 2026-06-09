@@ -225,15 +225,16 @@ def api_podcast_transcript():
             episode_title=episode_title,
             audio_url=audio_url,
         )
+        email_error = None
         try:
             gmail_client.send_email(
                 to="hakandeveli24@gmail.com",
                 subject=f"📝 Transkript: {episode_title}",
                 body=transcript,
             )
-        except Exception:
-            pass  # email gönderilemese de transkript dönsün
-        return jsonify({"ok": True, "transcript": transcript, "title": episode_title})
+        except Exception as mail_err:
+            email_error = str(mail_err)
+        return jsonify({"ok": True, "transcript": transcript, "title": episode_title, "email_error": email_error})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
