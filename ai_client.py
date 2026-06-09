@@ -13,7 +13,15 @@ except ImportError:
 try:
     from groq import Groq as _Groq
 except ImportError:
-    _Groq = None
+    # PA web process user site-packages'ı otomatik yüklemiyor; elle ekle ve tekrar dene
+    import sys as _sys, site as _site
+    _user_site = '/home/hakandeveli24/.local/lib/python3.13/site-packages'
+    if _user_site not in _sys.path:
+        _sys.path.insert(0, _user_site)
+    try:
+        from groq import Groq as _Groq
+    except ImportError:
+        _Groq = None
 
 BASE_DIR = Path(os.path.dirname(os.path.abspath(__file__)))
 AUDIO_DIR = BASE_DIR / "static" / "audio"
