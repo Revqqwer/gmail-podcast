@@ -248,7 +248,6 @@ def transcribe_podcast(show_name: str, episode_title: str, audio_url: str | None
     result = client.audio.transcriptions.create(
         file=(fname, io.BytesIO(audio_bytes), "audio/mpeg"),
         model="whisper-large-v3",
-        language="tr",
         response_format="text",
     )
     return result if isinstance(result, str) else result.text
