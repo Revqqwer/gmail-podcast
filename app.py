@@ -208,16 +208,24 @@ def api_podcast_transcript():
         body = request.json or {}
         episode_id = body.get("id")
         audio_url  = body.get("audio_url") or None   # opsiyonel override
-        all_eps = get_store().get("episodes", [])
-        ep = next((e for e in all_eps if e["id"] == episode_id), None)
-        if not ep:
-            return jsonify({"ok": False, "error": "Episode bulunamadı, önce listeyi yükleyin."}), 400
+        show_name    = body.get("show_name")
+        episode_title = body.get("title")
+
+        # JS'den gelmiyorsa store'a bak (fallback)
+        if not show_name or not episode_title:
+            all_eps = get_store().get("episodes", [])
+            ep = next((e for e in all_eps if e["id"] == episode_id), None)
+            if not ep:
+                return jsonify({"ok": False, "error": "Episode bulunamadı, önce listeyi yükleyin."}), 400
+            show_name = ep["show_name"]
+            episode_title = ep["title"]
+
         transcript = ai_client.transcribe_podcast(
-            show_name=ep["show_name"],
-            episode_title=ep["title"],
+            show_name=show_name,
+            episode_title=episode_title,
             audio_url=audio_url,
         )
-        return jsonify({"ok": True, "transcript": transcript, "title": ep["title"]})
+        return jsonify({"ok": True, "transcript": transcript, "title": episode_title})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 

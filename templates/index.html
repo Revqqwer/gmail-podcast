@@ -685,7 +685,7 @@ async function getTranscript(id, event) {
     const r = await fetch(BASE + '/api/podcasts/transcript', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ id }),
+      body: JSON.stringify({ id, show_name: ep ? ep.show_name : null, title: ep ? ep.title : null }),
     });
     const data = await r.json();
     if (data.ok) {
