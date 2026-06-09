@@ -1,6 +1,7 @@
 import os
 import base64
 import re
+from email.mime.text import MIMEText
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -32,6 +33,15 @@ def authenticate():
         with open(TOKEN_FILE, "w") as f:
             f.write(creds.to_json())
     return build("gmail", "v1", credentials=creds)
+
+
+def send_email(to, subject, body):
+    service = authenticate()
+    msg = MIMEText(body, "plain", "utf-8")
+    msg["to"] = to
+    msg["subject"] = subject
+    raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+    service.users().messages().send(userId="me", body={"raw": raw}).execute()
 
 
 def trash_email(email_id):
