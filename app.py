@@ -23,19 +23,8 @@ store = {}
 def login_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        if not session.get("logged_in"):
-            return redirect(url_for("login"))
         return f(*args, **kwargs)
     return decorated
-
-
-@app.before_request
-def check_auth():
-    public = {"login", "static"}
-    if request.endpoint not in public and not session.get("logged_in"):
-        if request.is_json:
-            return jsonify({"ok": False, "error": "Giriş gerekli."}), 401
-        return redirect(url_for("login"))
 
 
 def get_store():
