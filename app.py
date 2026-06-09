@@ -153,13 +153,18 @@ def api_spotify_disconnect():
 
 @app.route("/api/podcasts/fetch")
 def api_podcasts_fetch():
+    # Önce session'dan, yoksa dosyadan oku
     token_info = session.get("spotify_token")
+    if not token_info and SPOTIFY_TOKEN_FILE.exists():
+        import json as _json
+        token_info = _json.loads(SPOTIFY_TOKEN_FILE.read_text())
+        session["spotify_token"] = token_info
     if not token_info:
         return jsonify({"ok": False, "error": "Spotify bağlı değil."}), 401
     try:
         episodes, token_info = spotify_client.fetch_new_episodes(token_info, days=14)
         session["spotify_token"] = token_info
-        _save_spotify_token(token_info)  # diske de kaydet
+        _save_spotify_token(token_info)
         get_store()["episodes"] = episodes
         return jsonify({"ok": True, "episodes": episodes})
     except Exception as e:
