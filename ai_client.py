@@ -1,10 +1,19 @@
 import os
+import io
 import time
 import datetime
 import anthropic
 import openai
 import requests
 from pathlib import Path
+try:
+    import feedparser
+except ImportError:
+    feedparser = None
+try:
+    from groq import Groq as _Groq
+except ImportError:
+    _Groq = None
 
 BASE_DIR = Path(os.path.dirname(os.path.abspath(__file__)))
 AUDIO_DIR = BASE_DIR / "static" / "audio"
@@ -154,3 +163,84 @@ def text_to_speech(text, filename=None):
     )
     response.stream_to_file(str(path))
     return filename
+
+
+# ── Podcast Transkript (Groq Whisper) ─────────────────────────────────────────
+
+def _find_podcast_rss(show_name: str) -> str | None:
+    """iTunes Search API ile podcast RSS feed URL'ini bul."""
+    try:
+        r = requests.get(
+            "https://itunes.apple.com/search",
+            params={"term": show_name, "media": "podcast", "limit": 5},
+            timeout=10,
+        )
+        results = r.json().get("results", [])
+        if results:
+            return results[0].get("feedUrl")
+    except Exception:
+        pass
+    return None
+
+
+def _find_episode_audio_url(rss_url: str, episode_title: str) -> str | None:
+    """RSS feed'inden episode başlığıyla eşleşen MP3 URL'ini bul."""
+    if not feedparser:
+        return None
+    try:
+        feed = feedparser.parse(rss_url)
+        title_lower = episode_title.lower()
+        for entry in feed.entries:
+            if title_lower in entry.get("title", "").lower():
+                for link in entry.get("enclosures", []):
+                    if "audio" in link.get("type", "") or link.get("href", "").endswith(".mp3"):
+                        return link["href"]
+                # Bazı feed'lerde link direkt
+                if hasattr(entry, "link") and entry.link.endswith(".mp3"):
+                    return entry.link
+    except Exception:
+        pass
+    return None
+
+
+def transcribe_podcast(show_name: str, episode_title: str, audio_url: str | None = None) -> str:
+    """
+    Groq Whisper ile podcast episode transkriptini çıkar.
+    audio_url verilmezse RSS üzerinden bulunmaya çalışılır.
+    """
+    if _Groq is None:
+        raise RuntimeError("groq paketi yüklü değil: pip install groq")
+
+    groq_key = os.environ.get("GROQ_API_KEY")
+    if not groq_key:
+        raise RuntimeError("GROQ_API_KEY eksik")
+
+    # Ses URL'ini bul
+    if not audio_url:
+        rss_url = _find_podcast_rss(show_name)
+        if not rss_url:
+            raise RuntimeError(f"'{show_name}' için RSS feed bulunamadı")
+        audio_url = _find_episode_audio_url(rss_url, episode_title)
+        if not audio_url:
+            raise RuntimeError(f"'{episode_title}' için ses dosyası bulunamadı")
+
+    # Sesi indir (max 25 MB — Groq limiti)
+    r = requests.get(audio_url, stream=True, timeout=30)
+    r.raise_for_status()
+    MAX_BYTES = 24 * 1024 * 1024  # 24 MB
+    audio_bytes = b""
+    for chunk in r.iter_content(chunk_size=1024 * 1024):
+        audio_bytes += chunk
+        if len(audio_bytes) >= MAX_BYTES:
+            break
+
+    # Groq Whisper'a gönder
+    client = _Groq(api_key=groq_key)
+    fname = episode_title[:40].replace(" ", "_") + ".mp3"
+    result = client.audio.transcriptions.create(
+        file=(fname, io.BytesIO(audio_bytes), "audio/mpeg"),
+        model="whisper-large-v3",
+        language="tr",
+        response_format="text",
+    )
+    return result if isinstance(result, str) else result.text

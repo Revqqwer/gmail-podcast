@@ -130,12 +130,18 @@ def api_spotify_auth():
     return redirect(auth.get_authorize_url())
 
 
+SPOTIFY_TOKEN_FILE = Path(__file__).parent / "spotify_token.json"
+
+def _save_spotify_token(token_info):
+    SPOTIFY_TOKEN_FILE.write_text(__import__("json").dumps(token_info))
+
 @app.route("/callback/spotify")
 def spotify_callback():
     auth = spotify_client.get_auth_manager()
     code = request.args.get("code")
     token_info = auth.get_access_token(code, as_dict=True)
     session["spotify_token"] = token_info
+    _save_spotify_token(token_info)
     return redirect(url_for("index"))
 
 
@@ -152,7 +158,8 @@ def api_podcasts_fetch():
         return jsonify({"ok": False, "error": "Spotify bağlı değil."}), 401
     try:
         episodes, token_info = spotify_client.fetch_new_episodes(token_info, days=14)
-        session["spotify_token"] = token_info  # store refreshed token
+        session["spotify_token"] = token_info
+        _save_spotify_token(token_info)  # diske de kaydet
         get_store()["episodes"] = episodes
         return jsonify({"ok": True, "episodes": episodes})
     except Exception as e:
@@ -192,6 +199,26 @@ def api_email_trash(email_id):
         s = get_store()
         s["emails"] = [e for e in s.get("emails", []) if e["id"] != email_id]
         return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/podcasts/transcript", methods=["POST"])
+def api_podcast_transcript():
+    try:
+        body = request.json or {}
+        episode_id = body.get("id")
+        audio_url  = body.get("audio_url") or None   # opsiyonel override
+        all_eps = get_store().get("episodes", [])
+        ep = next((e for e in all_eps if e["id"] == episode_id), None)
+        if not ep:
+            return jsonify({"ok": False, "error": "Episode bulunamadı, önce listeyi yükleyin."}), 400
+        transcript = ai_client.transcribe_podcast(
+            show_name=ep["show_name"],
+            episode_title=ep["title"],
+            audio_url=audio_url,
+        )
+        return jsonify({"ok": True, "transcript": transcript, "title": ep["title"]})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
